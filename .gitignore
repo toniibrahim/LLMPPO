@@ -1,0 +1,19 @@
+# MQL5 compiled files
+*.ex5
+
+# MQL5 logs and reports
+*.log
+*.htm
+*.gif
+
+# Windows system files
+Thumbs.db
+Desktop.ini
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Backup files
+*.bak
+*~
