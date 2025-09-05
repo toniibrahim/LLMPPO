@@ -243,7 +243,8 @@ CRiskManager::CRiskManager(void)
     m_limits.min_sharpe_ratio = 0.5;         // Minimum 0.5 Sharpe ratio (performance threshold)
     
     // === INITIALIZE PERFORMANCE TRACKING ===
-    ZeroMemory(m_performance);               // Clear all performance metrics to zero\n}
+    ZeroMemory(m_performance);               // Clear all performance metrics to zero
+}
 
 //+------------------------------------------------------------------+
 //| Destructor - Clean up memory allocation                         |
@@ -310,7 +311,32 @@ bool CRiskManager::UpdatePriceData(double price, datetime time)
         return false;
     }
     
-    // === ROLLING WINDOW UPDATE (FIFO BUFFER) ===\n    // Shift all existing data one position to the right (age the data)\n    for(int i = m_history_size - 1; i > 0; i--)\n    {\n        m_price_history[i] = m_price_history[i-1];     // Shift price data\n        m_time_history[i] = m_time_history[i-1];       // Shift timestamp data\n        if(i > 1) m_returns_history[i] = m_returns_history[i-1];  // Shift return data\n    }\n    \n    // === INSERT NEW OBSERVATION AT FRONT OF ARRAYS ===\n    m_price_history[0] = price;                        // Store current price P_t\n    m_time_history[0] = time;                          // Store current timestamp t\n    \n    // === CALCULATE LOGARITHMIC RETURN ===\n    // Formula: r_t = ln(P_t / P_{t-1}) where P_t = current price, P_{t-1} = previous price\n    if(m_price_history[1] > 0)  // Ensure we have valid previous price\n    {\n        m_returns_history[0] = MathLog(price / m_price_history[1]);  // Continuous return\n    }\n    else\n    {\n        m_returns_history[0] = 0.0;  // No return calculation possible for first observation\n    }\n    \n    return true;  // Successful update\n}"
+    // === ROLLING WINDOW UPDATE (FIFO BUFFER) ===
+    // Shift all existing data one position to the right (age the data)
+    for(int i = m_history_size - 1; i > 0; i--)
+    {
+        m_price_history[i] = m_price_history[i-1];     // Shift price data
+        m_time_history[i] = m_time_history[i-1];       // Shift timestamp data
+        if(i > 1) m_returns_history[i] = m_returns_history[i-1];  // Shift return data
+    }
+    
+    // === INSERT NEW OBSERVATION AT FRONT OF ARRAYS ===
+    m_price_history[0] = price;                        // Store current price P_t
+    m_time_history[0] = time;                          // Store current timestamp t
+    
+    // === CALCULATE LOGARITHMIC RETURN ===
+    // Formula: r_t = ln(P_t / P_{t-1}) where P_t = current price, P_{t-1} = previous price
+    if(m_price_history[1] > 0)  // Ensure we have valid previous price
+    {
+        m_returns_history[0] = MathLog(price / m_price_history[1]);  // Continuous return
+    }
+    else
+    {
+        m_returns_history[0] = 0.0;  // No return calculation possible for first observation
+    }
+    
+    return true;  // Successfully updated price data
+}
 
 //+------------------------------------------------------------------+
 //| Calculate Historical VaR - Non-parametric empirical approach    |
@@ -818,7 +844,14 @@ double CRiskManager::CalculateSortinoRatio(double target_return = 0.0)
             Print("WARNING: Zero downside deviation but returns don't exceed target");
             return 0.0;
         }
-    }\n    \n    // === STEP 4: CALCULATE SORTINO RATIO ===\n    // Sortino ratio = (excess return above target) / (downside risk only)\n    m_sortino_ratio = (mean_return - target_return) / downside_deviation;\n    \n    return m_sortino_ratio;\n}"
+    }
+    
+    // === STEP 4: CALCULATE SORTINO RATIO ===
+    // Sortino ratio = (excess return above target) / (downside risk only)
+    m_sortino_ratio = (mean_return - target_return) / downside_deviation;
+    
+    return m_sortino_ratio;
+}
 
 //+------------------------------------------------------------------+
 //| Calculate position size using Kelly Criterion - Optimal growth strategy |
@@ -896,7 +929,20 @@ double CRiskManager::CalculateKellySize(double win_prob, double avg_win, double 
         return 0.0;
     }
     
-    // === CONSERVATIVE SCALING AND RISK MANAGEMENT ===\n    // Apply fractional Kelly (typically 25% of full Kelly for safety)\n    kelly_fraction *= 0.25;  // Conservative scaling to reduce volatility\n    \n    // Apply maximum position size cap (institutional risk management)\n    double max_position = 0.2;  // 20% maximum position size cap\n    kelly_fraction = MathMin(kelly_fraction, max_position);\n    \n    Print(\"Kelly Calculation: Win Rate=\", DoubleToString(win_prob*100, 1), \"%, \",\n          \"Win/Loss Ratio=\", DoubleToString(win_loss_ratio, 2), \", \",\n          \"Suggested Size=\", DoubleToString(kelly_fraction*100, 2), \"%\");\n    \n    return kelly_fraction;\n}"
+    // === CONSERVATIVE SCALING AND RISK MANAGEMENT ===
+    // Apply fractional Kelly (typically 25% of full Kelly for safety)
+    kelly_fraction *= 0.25;  // Conservative scaling to reduce volatility
+    
+    // Apply maximum position size cap (institutional risk management)
+    double max_position = 0.2;  // 20% maximum position size cap
+    kelly_fraction = MathMin(kelly_fraction, max_position);
+    
+    Print("Kelly Calculation: Win Rate=", DoubleToString(win_prob*100, 1), "%, ",
+          "Win/Loss Ratio=", DoubleToString(win_loss_ratio, 2), ", ",
+          "Suggested Size=", DoubleToString(kelly_fraction*100, 2), "%");
+    
+    return kelly_fraction;
+}
 
 //+------------------------------------------------------------------+
 //| Check risk limits - Real-time risk monitoring and alerting      |
@@ -927,58 +973,78 @@ double CRiskManager::CalculateKellySize(double win_prob, double avg_win, double 
 // FAIL-SAFE DESIGN: Returns false if ANY limit is breached (conservative approach)
 bool CRiskManager::CheckRiskLimits(void)
 {
-    Print("=== RISK LIMIT MONITORING ===");
-    
-    // === STEP 1: UPDATE ALL RISK METRICS ===\n    // Refresh risk calculations with latest market data\n    CalculateHistoricalVaR();    // Update VaR estimate\n    CalculateCVaR();             // Update tail risk measure\n    CalculateVolatility();       // Update volatility estimate\n    \n    bool all_limits_ok = true;   // Track overall compliance status\n    \n    // === STEP 2: STATISTICAL RISK LIMITS ===\n    \n    // VaR Limit Check (maximum acceptable daily loss at confidence level)\n    if(m_current_var > m_limits.max_var_limit)\n    {\n        Print(\"⚠️ RISK BREACH: VaR limit exceeded - Current: \", DoubleToString(m_current_var*100, 3), \n              \"%, Limit: \", DoubleToString(m_limits.max_var_limit*100, 3), \"%\");\n        all_limits_ok = false;\n    }\n    else\n    {\n        Print(\"✅ VaR within limits: \", DoubleToString(m_current_var*100, 3), \n              \"% < \", DoubleToString(m_limits.max_var_limit*100, 3), \"%\");\n    }\n    \n    // CVaR Limit Check (maximum acceptable tail risk)\n    if(m_current_cvar > m_limits.max_cvar_limit)\n    {\n        Print(\"⚠️ RISK BREACH: CVaR limit exceeded - Current: \", DoubleToString(m_current_cvar*100, 3),\n              \"%, Limit: \", DoubleToString(m_limits.max_cvar_limit*100, 3), \"%\");\n        all_limits_ok = false;\n    }\n    else\n    {\n        Print(\"✅ CVaR within limits: \", DoubleToString(m_current_cvar*100, 3),\n              \"% < \", DoubleToString(m_limits.max_cvar_limit*100, 3), \"%\");\n    }\n    \n    // Volatility Limit Check (maximum acceptable annualized volatility)\n    if(m_current_volatility > m_limits.max_volatility)\n    {\n        Print(\"⚠️ RISK BREACH: Volatility limit exceeded - Current: \", DoubleToString(m_current_volatility*100, 2),\n              \"%, Limit: \", DoubleToString(m_limits.max_volatility*100, 2), \"%\");\n        all_limits_ok = false;\n    }\n    else\n    {\n        Print(\"✅ Volatility within limits: \", DoubleToString(m_current_volatility*100, 2),\n              \"% < \", DoubleToString(m_limits.max_volatility*100, 2), \"%\");\n    }\n    \n    // === STEP 3: OVERALL COMPLIANCE STATUS ===\n    if(all_limits_ok)\n    {\n        Print(\"✅ ALL RISK LIMITS COMPLIANT\");\n    }\n    else\n    {\n        Print(\"🚨 RISK LIMIT BREACH DETECTED - IMMEDIATE ACTION REQUIRED\");\n    }\n    \n    Print(\"==============================\");\n    \n    return all_limits_ok;  // Return false if ANY limit breached\n}"
+    // Update core risk metrics
+    m_current_volatility = CalculateVolatility(0);
+    m_sharpe_ratio       = CalculateSharpeRatio();
+    m_sortino_ratio      = CalculateSortinoRatio(0.0);
+    m_current_var        = CalculateHistoricalVaR(m_confidence_level);
+    m_current_cvar       = CalculateCVaR(m_confidence_level);
 
-//+------------------------------------------------------------------+
-//| Generate comprehensive risk report - Institutional risk reporting |
-//+------------------------------------------------------------------+
-// GenerateRiskReport() creates a comprehensive risk management report suitable for:
-// - Daily risk committee meetings
-// - Regulatory reporting requirements  
-// - Senior management briefings
-// - Client risk disclosures
-// - Investment committee presentations
-//
-// REPORT STRUCTURE:
-// 1. Executive Summary: Key risk metrics and alerts
-// 2. Statistical Risk Measures: VaR, CVaR, volatility, higher moments
-// 3. Performance Analytics: Risk-adjusted returns, drawdown analysis
-// 4. Limit Monitoring: Compliance status with all risk limits
-// 5. Risk Attribution: Sources and drivers of current risk
-// 6. Forward-Looking Analysis: Stress tests and scenario analysis
-//
-// FORMATTING: Professional institutional format with clear sections,
-// quantitative metrics, and traffic light status indicators
+    bool all_ok = true;
+
+    // Check statistical limits
+    if(m_limits.max_var_limit > 0 && m_current_var > m_limits.max_var_limit)
+    {
+        Print("ALERT: VaR limit breached: ", DoubleToString(m_current_var*100,2), "% > ",
+              DoubleToString(m_limits.max_var_limit*100,2), "%");
+        all_ok = false;
+    }
+    if(m_limits.max_cvar_limit > 0 && m_current_cvar > m_limits.max_cvar_limit)
+    {
+        Print("ALERT: CVaR limit breached: ", DoubleToString(m_current_cvar*100,2), "% > ",
+              DoubleToString(m_limits.max_cvar_limit*100,2), "%");
+        all_ok = false;
+    }
+    if(m_limits.max_volatility > 0 && m_current_volatility > m_limits.max_volatility)
+    {
+        Print("ALERT: Volatility limit breached: ", DoubleToString(m_current_volatility*100,2), "% > ",
+              DoubleToString(m_limits.max_volatility*100,2), "%");
+        all_ok = false;
+    }
+
+    // Check performance thresholds
+    if(m_limits.min_sharpe_ratio > 0 && m_sharpe_ratio < m_limits.min_sharpe_ratio)
+    {
+        Print("ALERT: Sharpe ratio below minimum: ", DoubleToString(m_sharpe_ratio,2),
+              " < ", DoubleToString(m_limits.min_sharpe_ratio,2));
+        all_ok = false;
+    }
+
+    // Drawdown checks (if available)
+    if(m_max_drawdown > 0 && m_limits.max_monthly_loss > 0 && m_max_drawdown > m_limits.max_monthly_loss)
+    {
+        Print("ALERT: Max drawdown exceeds monthly loss limit: ",
+              DoubleToString(m_max_drawdown*100,2), "% > ",
+              DoubleToString(m_limits.max_monthly_loss*100,2), "%");
+        all_ok = false;
+    }
+
+    return all_ok;
+}
+
 string CRiskManager::GenerateRiskReport(void)
 {
-    // === REPORT HEADER ===\n    string report = \"\\n📊 INSTITUTIONAL RISK MANAGEMENT REPORT\\n\";\n    report += \"═══════════════════════════════════════════\\n\";\n    report += \"Report Generation: \" + TimeToString(TimeCurrent()) + \" (Server Time)\\n\";\n    report += \"Risk Manager Version: 1.00 | Confidence Level: \" + DoubleToString(m_confidence_level*100, 1) + \"%\\n\\n\";\n    \n    // === EXECUTIVE SUMMARY ===\n    report += \"📈 EXECUTIVE SUMMARY\\n\";\n    report += \"─────────────────────\\n\";\n    \n    // Overall risk status\n    bool risk_compliant = CheckRiskLimits();  // This updates metrics and checks limits\n    report += \"Risk Status: \" + (risk_compliant ? \"✅ COMPLIANT\" : \"🚨 BREACH DETECTED\") + \"\\n\";\n    report += \"Primary Risk Measure (VaR): \" + DoubleToString(m_current_var*100, 3) + \"%\\n\";\n    report += \"Tail Risk Measure (CVaR): \" + DoubleToString(m_current_cvar*100, 3) + \"%\\n\\n\";\n    \n    // === STATISTICAL RISK MEASURES ===\n    report += \"📊 STATISTICAL RISK MEASURES\\n\";\n    report += \"──────────────────────────────\\n\";\n    report += \"Value at Risk (\" + DoubleToString(m_confidence_level*100, 1) + \"% confidence): \" + \n              DoubleToString(m_current_var*100, 3) + \"% (Daily)\\n\";\n    report += \"Conditional VaR (Expected Shortfall): \" + DoubleToString(m_current_cvar*100, 3) + \"%\\n\";\n    report += \"Annualized Volatility: \" + DoubleToString(m_current_volatility*100, 2) + \"%\\n\";\n    \n    // Higher moments (distribution characteristics)\n    report += \"Return Distribution Skewness: \" + DoubleToString(m_skewness, 3) + \n              (m_skewness < 0 ? \" (Left tail heavy)\" : (m_skewness > 0 ? \" (Right tail heavy)\" : \" (Symmetric)\")) + \"\\n\";\n    report += \"Return Distribution Kurtosis: \" + DoubleToString(m_kurtosis, 3) + \n              (m_kurtosis > 3 ? \" (Fat tails)\" : (m_kurtosis < 3 ? \" (Thin tails)\" : \" (Normal)\")) + \"\\n\\n\";\n    \n    // === RISK-ADJUSTED PERFORMANCE ===\n    report += \"🎯 RISK-ADJUSTED PERFORMANCE\\n\";\n    report += \"───────────────────────────────\\n\";\n    report += \"Sharpe Ratio: \" + DoubleToString(m_sharpe_ratio, 3);\n    if(m_sharpe_ratio > 1.0) report += \" (Excellent)\";\n    else if(m_sharpe_ratio > 0.5) report += \" (Good)\";\n    else if(m_sharpe_ratio > 0.0) report += \" (Acceptable)\";\n    else report += \" (Poor)\";\n    report += \"\\n\";\n    \n    report += \"Sortino Ratio: \" + DoubleToString(m_sortino_ratio, 3);\n    if(m_sortino_ratio > 2.0) report += \" (Excellent)\";\n    else if(m_sortino_ratio > 1.0) report += \" (Good)\";\n    else if(m_sortino_ratio > 0.5) report += \" (Acceptable)\";\n    else report += \" (Poor)\";\n    report += \"\\n\";\n    \n    report += \"Maximum Drawdown: \" + DoubleToString(m_max_drawdown*100, 2) + \"%\\n\\n\";\n    \n    // === RISK LIMIT COMPLIANCE ===\n    report += \"⚖️ RISK LIMIT COMPLIANCE MATRIX\\n\";\n    report += \"─────────────────────────────────\\n\";\n    \n    string var_status = (m_current_var <= m_limits.max_var_limit) ? \"✅ COMPLIANT\" : \"❌ BREACH\";\n    report += \"VaR Limit (\" + DoubleToString(m_limits.max_var_limit*100, 1) + \"%): \" + var_status + \n              \" [\" + DoubleToString((m_current_var/m_limits.max_var_limit)*100, 1) + \"% utilized]\\n\";\n    \n    string cvar_status = (m_current_cvar <= m_limits.max_cvar_limit) ? \"✅ COMPLIANT\" : \"❌ BREACH\";\n    report += \"CVaR Limit (\" + DoubleToString(m_limits.max_cvar_limit*100, 1) + \"%): \" + cvar_status + \n              \" [\" + DoubleToString((m_current_cvar/m_limits.max_cvar_limit)*100, 1) + \"% utilized]\\n\";\n    \n    string vol_status = (m_current_volatility <= m_limits.max_volatility) ? \"✅ COMPLIANT\" : \"❌ BREACH\";\n    report += \"Volatility Limit (\" + DoubleToString(m_limits.max_volatility*100, 1) + \"%): \" + vol_status + \n              \" [\" + DoubleToString((m_current_volatility/m_limits.max_volatility)*100, 1) + \"% utilized]\\n\\n\";\n    \n    // === FOOTER ===\n    report += \"═══════════════════════════════════════════\\n\";\n    report += \"📝 Report generated by LLM-PPO Risk Manager\\n\";\n    report += \"⚠️ This report is for internal risk management use only\\n\";\n    \n    return report;\n}"
+    string report = "\nRISK REPORT\n";
+    report += "==============================\n";
+    report += "Confidence: " + DoubleToString(m_confidence_level*100,1) + "%\n";
+    report += "VaR (" + IntegerToString((int)MathRound(m_confidence_level*100)) + "%): "
+              + DoubleToString(m_current_var*100,2) + "%\n";
+    report += "CVaR: " + DoubleToString(m_current_cvar*100,2) + "%\n";
+    report += "Volatility (ann.): " + DoubleToString(m_current_volatility*100,2) + "%\n";
+    report += "Sharpe: " + DoubleToString(m_sharpe_ratio,2) + "\n";
+    report += "Sortino: " + DoubleToString(m_sortino_ratio,2) + "\n";
+    report += "Max Drawdown: " + DoubleToString(m_max_drawdown*100,2) + "%\n";
+    report += "Position Size Limit: " + DoubleToString(m_limits.max_position_size*100,2) + "%\n";
+    report += "Daily Loss Limit: " + DoubleToString(m_limits.max_daily_loss*100,2) + "%\n";
+    report += "Weekly Loss Limit: " + DoubleToString(m_limits.max_weekly_loss*100,2) + "%\n";
+    report += "Monthly Loss Limit: " + DoubleToString(m_limits.max_monthly_loss*100,2) + "%\n";
+    report += "VaR Limit: " + DoubleToString(m_limits.max_var_limit*100,2) + "%\n";
+    report += "CVaR Limit: " + DoubleToString(m_limits.max_cvar_limit*100,2) + "%\n";
+    report += "Volatility Limit: " + DoubleToString(m_limits.max_volatility*100,2) + "%\n";
+    report += "Min Sharpe: " + DoubleToString(m_limits.min_sharpe_ratio,2) + "\n";
+    return report;
+}
 
-//+------------------------------------------------------------------+
-//| Set risk limits - Configure operational risk management parameters |
-//+------------------------------------------------------------------+
-// SetRiskLimits() allows dynamic configuration of key risk management parameters
-// during runtime. This provides flexibility for different market conditions,
-// regulatory requirements, or changing risk appetite.
-//
-// PARAMETER VALIDATION:
-// - All limits should be positive values
-// - Position size limits typically 0.01-0.5 (1%-50%)
-// - Daily loss limits typically 0.01-0.1 (1%-10%)
-// - VaR limits typically 0.01-0.05 (1%-5%)
-//
-// APPLICATIONS:
-// - Adapting to changing market volatility
-// - Regulatory compliance adjustments
-// - Client-specific risk appetite implementation
-// - Seasonal or event-driven risk management
-//
-// BEST PRACTICES:
-// - Set conservative limits initially
-// - Adjust based on backtesting results
-// - Consider correlation between different limits
-// - Document all limit changes for audit trail
 void CRiskManager::SetRiskLimits(double max_pos_size, double max_daily, double max_var)
 {
     // === INPUT VALIDATION ===

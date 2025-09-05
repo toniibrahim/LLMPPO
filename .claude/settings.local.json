@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(mql5:*)",
+      "Bash(sed:*)",
+      "Bash(timeout 10 mql5:*)"
     ],
     "deny": [],
     "ask": []

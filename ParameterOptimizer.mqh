@@ -239,7 +239,8 @@ public:
         double best_position[]; // Personal best position found
         double best_fitness;    // Personal best fitness achieved
         double fitness;         // Current fitness at current position
-    };
+  protected:
+};
     bool                 RunPSO(void);                             // Main PSO algorithm implementation
     void                 UpdateParticleVelocity(Particle &particle, double &global_best[]); // PSO velocity update equation
     void                 UpdateParticlePosition(Particle &particle); // Update position with boundary constraints
@@ -300,6 +301,7 @@ public:
     
     // Getters
     int                  GetParameterCount(void) { return m_param_count; }
+    long                GetSearchSpaceSize(void);
     bool                 IsOptimizationRunning(void) { return m_is_running; }
     Chromosome           GetBestChromosome(void);
     double               GetBestFitness(void) { return m_best_fitness; }
@@ -1049,8 +1051,47 @@ bool CParameterOptimizer::RunSimulatedAnnealing(void)
 // ALTERNATIVE STRATEGIES: Adaptive step size, multi-parameter changes, constraint-aware moves
 double CParameterOptimizer::GenerateNeighborSolution(double &current_params[])
 {
-    // Randomly select an enabled parameter to perturb\n    int param_to_modify = -1;\n    int attempts = 0;\n    \n    // Find random enabled parameter (with retry limit to avoid infinite loop)\n    while(param_to_modify == -1 && attempts < 100)\n    {\n        int idx = (int)(MathRand() * m_param_count / 32767.0);\n        if(idx >= 0 && idx < m_param_count && m_parameters[idx].is_enabled)\n            param_to_modify = idx;\n        attempts++;\n    }\n    \n    // Safety check: return if no enabled parameters found\n    if(param_to_modify == -1)\n        return 0.0;\n    \n    // Generate random perturbation: \u00b110% of parameter range\n    double range = m_parameters[param_to_modify].max_value - m_parameters[param_to_modify].min_value;\n    double perturbation = (MathRand() / 32767.0 - 0.5) * range * 0.1;  // Symmetric around 0\n    \n    // Apply perturbation to selected parameter\n    current_params[param_to_modify] += perturbation;\n    \n    // Enforce boundary constraints using clamping\n    if(current_params[param_to_modify] < m_parameters[param_to_modify].min_value)\n        current_params[param_to_modify] = m_parameters[param_to_modify].min_value;\n    else if(current_params[param_to_modify] > m_parameters[param_to_modify].max_value)\n        current_params[param_to_modify] = m_parameters[param_to_modify].max_value;\n    \n    // Return perturbation magnitude (for potential adaptive step sizing)\n    return MathAbs(perturbation);\n}"
+    int enabled_indices[];
+    for(int i = 0; i < m_param_count; i++)
+    {
+        if(m_parameters[i].is_enabled)
+        {
+            int n = ArraySize(enabled_indices);
+            ArrayResize(enabled_indices, n + 1);
+            enabled_indices[n] = i;
+        }
+    }
+    if(ArraySize(enabled_indices) == 0)
+        return 0.0;
 
+    int pick = enabled_indices[MathRand() % ArraySize(enabled_indices)];
+
+    double minv   = m_parameters[pick].min_value;
+    double maxv   = m_parameters[pick].max_value;
+    double step   = m_parameters[pick].step;
+    double range  = maxv - minv;
+
+    double u = 0.0;
+    for(int k = 0; k < 3; k++) u += (double)MathRand() / 32767.0;
+    u = (u / 3.0 - 0.5) * 2.0;
+    double sigma = 0.10 * range;
+    double delta = u * sigma;
+
+    double newval = current_params[pick] + delta;
+    if(newval < minv) newval = minv;
+    if(newval > maxv) newval = maxv;
+
+    if(step > 0.0)
+    {
+        double steps = MathRound((newval - minv) / step);
+        newval = minv + steps * step;
+        if(newval < minv) newval = minv;
+        if(newval > maxv) newval = maxv;
+    }
+
+    current_params[pick] = newval;
+    return MathAbs(delta);
+}
 //+------------------------------------------------------------------+
 //| Calculate temperature for SA cooling schedule - Exponential decay |
 //+------------------------------------------------------------------+
@@ -1562,3 +1603,40 @@ string CParameterOptimizer::GenerateOptimizationReport(void)
     
     return report;
 }
+//+------------------------------------------------------------------+
+//| Search-space size utilities                                       |
+//+------------------------------------------------------------------+
+long CParameterOptimizer::GetSearchSpaceSize(void)
+{
+    long total = 1;
+    int enabled = 0;
+    for(int i = 0; i < ArraySize(m_parameters); i++)
+    {
+        if(!m_parameters[i].is_enabled)
+            continue;
+        enabled++;
+
+        double minv = m_parameters[i].min_value;
+        double maxv = m_parameters[i].max_value;
+        double step = m_parameters[i].step;
+
+        long count = 1;
+        if(step > 0.0 && maxv >= minv)
+        {
+            double steps = MathFloor(((maxv - minv) / step) + 1.0000001);
+            if(steps < 1.0) steps = 1.0;
+            if(steps > 9.22e18) steps = 9.22e18;
+            count = (long)steps;
+        }
+
+        if(total > 0 && count > 0 && total <= 9223372036854775807L / count)
+            total *= count;
+        else
+            return 9223372036854775807L;
+    }
+    if(enabled == 0)
+        return 0;
+    return total;
+}
+
+
